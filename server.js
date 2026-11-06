@@ -10,24 +10,27 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Block non-public destinations so this public endpoint cannot be used to
 // probe loopback, private, link-local, metadata, or other special-use networks.
-const blockedAddresses = new net.BlockList();
-[
+const BLOCKED_IPV4 = [
   ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10],
   ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
-  ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16],
-  ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24],
-  ['224.0.0.0', 4], ['240.0.0.0', 4],
-].forEach(([address, prefix]) => blockedAddresses.addSubnet(address, prefix, 'ipv4'));
-[
-  ['::', 128], ['::1', 128], ['::ffff:0:0', 96], ['64:ff9b::', 96],
-  ['100::', 64], ['2001:db8::', 32], ['fc00::', 7],
-  ['fe80::', 10], ['ff00::', 8],
-].forEach(([address, prefix]) => blockedAddresses.addSubnet(address, prefix, 'ipv6'));
+  ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24],
+  ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
+  ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
+];
+
+function ipv4Number(address) {
+  return address.split('.').reduce((value, part) => ((value << 8) | Number(part)) >>> 0, 0);
+}
 
 function isPublicAddress(address) {
-  const family = net.isIP(address);
-  if (!family) return false;
-  return !blockedAddresses.check(address, family === 4 ? 'ipv4' : 'ipv6');
+  // This checker currently supports public IPv4 destinations only. IPv6 is
+  // rejected until equivalent IPv6 range validation is implemented.
+  if (net.isIP(address) !== 4) return false;
+  const value = ipv4Number(address);
+  return !BLOCKED_IPV4.some(([subnet, prefix]) => {
+    const mask = (0xffffffff << (32 - prefix)) >>> 0;
+    return (value & mask) === (ipv4Number(subnet) & mask);
+  });
 }
 
 function normalizeHostname(input) {
